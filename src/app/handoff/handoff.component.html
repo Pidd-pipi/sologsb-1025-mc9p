@@ -1,0 +1,254 @@
+<section class="handoff-shell">
+  <header class="handoff-header">
+    <div>
+      <span class="handoff-kicker">汛期 · 有限渠道名额</span>
+      <h2>渠道交接发布台</h2>
+      <p>按语言版本抢占名额 · 版本凭据失效重算 · 断网交接合并 · 待决未清不发布</p>
+    </div>
+    <div class="handoff-meta">
+      <div><span>通知版本</span><strong>{{ handoff.version }}</strong></div>
+      <div><span>内容凭据</span><strong class="cred">r{{ contentRev }}</strong></div>
+      <div><span>台账修订</span><strong>#{{ ledger.revision }}</strong></div>
+      <div [class.offline]="offline"><span>网络</span><strong>{{ offline ? '断网分叉中' : '在线' }}</strong></div>
+      <button nbButton status="basic" size="small" (click)="reset()">重置演示</button>
+    </div>
+  </header>
+
+  <div class="handoff-grid">
+    <div class="handoff-main">
+
+      <!-- 抢占名额 -->
+      <nb-card class="panel">
+        <nb-card-header>
+          <div><span class="handoff-kicker">抢占请求</span><h3>按语言版本抢占渠道名额</h3></div>
+          <nb-badge status="warning" [text]="activeWindow.role"></nb-badge>
+        </nb-card-header>
+        <nb-card-body>
+          <div class="acquire-form">
+            <label class="field">
+              <span>值班窗口凭据</span>
+              <nb-select fullWidth [(ngModel)]="activeWindowId">
+                <nb-option *ngFor="let win of windows" [value]="win.id">
+                  {{ win.name }} · {{ win.operator }}{{ win.canPublish ? '（可发布）' : '' }}
+                </nb-option>
+              </nb-select>
+              <small>授权渠道：{{ authorizedChannelText }}</small>
+            </label>
+            <label class="field">
+              <span>目标渠道</span>
+              <nb-select fullWidth [(ngModel)]="acquireChannelId">
+                <nb-option *ngFor="let ch of channels" [value]="ch.id" [disabled]="!isAuthorized(ch.id)">
+                  {{ ch.name }}（名额 {{ channelUsage(ch.id).used }}/{{ ch.capacity }}）{{ isAuthorized(ch.id) ? '' : '· 未授权' }}
+                </nb-option>
+              </nb-select>
+              <small *ngIf="!isAuthorized(acquireChannelId)" class="danger-text">该渠道不在本窗口授权范围，提交会被拒绝（越权拦截演示）。</small>
+            </label>
+            <label class="field">
+              <span>语言版本</span>
+              <nb-select fullWidth [(ngModel)]="acquireLocale">
+                <nb-option *ngFor="let locale of allLocales" [value]="locale.id">{{ locale.name }}</nb-option>
+              </nb-select>
+            </label>
+            <label class="field credential-field">
+              <span>版本凭据</span>
+              <nb-checkbox [(checked)]="useStaleCredential">故意使用旧凭据（r{{ contentRev - 1 }}）演示失效拒绝</nb-checkbox>
+            </label>
+            <button nbButton status="primary" (click)="acquire()">抢占名额</button>
+          </div>
+        </nb-card-body>
+      </nb-card>
+
+      <!-- 渠道名额台账 -->
+      <nb-card class="panel">
+        <nb-card-header>
+          <div><span class="handoff-kicker">名额台账</span><h3>有限渠道占用情况</h3></div>
+          <span class="legend"><i class="ok"></i>有效 <i class="bad"></i>凭据失效 <i class="old"></i>旧排期已盖掉</span>
+        </nb-card-header>
+        <nb-card-body class="channel-board">
+          <article class="channel-block" *ngFor="let ch of channels">
+            <header>
+              <strong>{{ ch.name }}</strong>
+              <span class="capacity" [class.full]="channelUsage(ch.id).used >= ch.capacity">
+                {{ channelUsage(ch.id).used }}/{{ ch.capacity }} 名额
+              </span>
+            </header>
+            <div class="claim-list">
+              <div class="claim-row" *ngFor="let claim of claimsOf(ch.id)" [class.invalid]="!claim.valid" [class.stale]="claim.stale">
+                <div class="claim-main">
+                  <div class="claim-title">
+                    <b>{{ claim.localeName }}</b>
+                    <nb-badge status="basic" [text]="claim.version"></nb-badge>
+                    <nb-badge *ngIf="claim.valid && !claim.stale" status="success" text="有效"></nb-badge>
+                    <nb-badge *ngIf="claim.stale" status="danger" [text]="'凭据过期 r' + claim.contentRev"></nb-badge>
+                    <nb-badge *ngIf="!claim.valid && claim.version !== handoff.version" status="warning" text="旧版排期已被盖掉"></nb-badge>
+                    <nb-badge *ngIf="!claim.valid && claim.version === handoff.version" status="danger" text="名额失效待重算"></nb-badge>
+                  </div>
+                  <div class="claim-sub">
+                    接管人：<strong>{{ claim.operator }}</strong>（{{ claim.windowName }}）· 凭据 r{{ claim.contentRev }}
+                  </div>
+                  <div class="confirms">
+                    <span *ngFor="let c of claim.confirms" [class.done]="c.status === 'confirmed'">
+                      {{ c.role }}：{{ c.status === 'confirmed' ? ('已确认 · ' + c.by) : '待确认' }}
+                    </span>
+                  </div>
+                </div>
+                <div class="claim-actions" *ngIf="claim.valid && !claim.stale">
+                  <button nbButton size="tiny" status="success"
+                    *ngFor="let role of confirmRoles"
+                    [disabled]="isConfirmed(claim, role)"
+                    (click)="confirm(claim, role)">{{ role }}</button>
+                  <button nbButton size="tiny" status="basic" (click)="release(claim)">释放</button>
+                </div>
+              </div>
+              <p class="empty-copy" *ngIf="!claimsOf(ch.id).length">该渠道尚无排期。</p>
+            </div>
+          </article>
+        </nb-card-body>
+      </nb-card>
+
+      <!-- 待处理稿 -->
+      <nb-card class="panel" *ngIf="openPendingDrafts.length">
+        <nb-card-header><div><span class="handoff-kicker">失败方留稿</span><h3>待处理稿（抢占失败）</h3></div></nb-card-header>
+        <nb-card-body class="pending-list">
+          <article *ngFor="let d of openPendingDrafts">
+            <div>
+              <strong>{{ channelName(d.channelId) }} · {{ localeName(d.locale) }}</strong>
+              <p>{{ d.note }}</p>
+              <p class="takeover" *ngIf="d.takeover">接管人：<b>{{ d.takeover.operator }}</b>（{{ windowName(d.takeover.windowId) }}），接管时间 {{ d.takeover.claimedAt | date:'HH:mm' }}</p>
+              <p class="takeover" *ngIf="!d.takeover">渠道名额已满，等待有人释放后可重试。</p>
+            </div>
+            <div class="pending-actions">
+              <button nbButton size="small" status="primary" (click)="retryDraft(d.id)">重新抢占</button>
+              <button nbButton size="small" status="basic" (click)="discardDraft(d.id)">放弃</button>
+            </div>
+          </article>
+        </nb-card-body>
+      </nb-card>
+
+      <!-- 断网合并待决 -->
+      <nb-card class="panel conflict-panel" *ngIf="openConflicts.length">
+        <nb-card-header><div><span class="handoff-kicker">断网交接合并</span><h3>同一渠道两边都改 · 待决项</h3></div></nb-card-header>
+        <nb-card-body class="conflict-list">
+          <nb-alert status="danger">处理完成前不能交接发布。</nb-alert>
+          <article *ngFor="let c of openConflicts">
+            <header>
+              <strong>{{ channelName(c.channelId) }} · {{ localeName(c.locale) }}</strong>
+              <span>{{ c.version }}</span>
+            </header>
+            <div class="conflict-sides">
+              <div class="side">
+                <b>本地</b>
+                <p>{{ c.local.operator }}（{{ windowName(c.local.windowId) }}）</p>
+                <p>{{ c.local.claimed ? '占用名额' : '已释放' }} · 凭据 r{{ c.local.contentRev }}</p>
+                <button nbButton size="tiny" status="primary" (click)="resolveConflict(c.id, 'local')">保留本地</button>
+              </div>
+              <div class="side remote">
+                <b>对端（夜班交接包）</b>
+                <p>{{ c.remote.operator }}（{{ windowName(c.remote.windowId) }}）</p>
+                <p>{{ c.remote.claimed ? '占用名额' : '已释放' }} · 凭据 r{{ c.remote.contentRev }}</p>
+                <button nbButton size="tiny" status="warning" (click)="resolveConflict(c.id, 'remote')">采用对端</button>
+              </div>
+            </div>
+          </article>
+        </nb-card-body>
+      </nb-card>
+
+      <!-- 版本凭据：正文/标题/影响范围 -->
+      <nb-card class="panel">
+        <nb-card-header>
+          <div><span class="handoff-kicker">版本凭据</span><h3>正文 / 标题 / 影响范围变动</h3></div>
+          <span class="cred-badge">当前 r{{ contentRev }}</span>
+        </nb-card-header>
+        <nb-card-body>
+          <div class="edit-locales">
+            <button *ngFor="let locale of allLocales" [class.active]="editLocale === locale.id" (click)="editLocale = locale.id; onEditLocaleChange()">
+              {{ locale.name }}
+              <i *ngIf="!requiredLocales.includes(locale.id)">非必需</i>
+            </button>
+          </div>
+          <label class="field"><span>标题</span>
+            <input nbInput fullWidth [(ngModel)]="editTitle" placeholder="该语言版本标题">
+          </label>
+          <label class="field"><span>正文</span>
+            <textarea nbInput fullWidth rows="4" [(ngModel)]="editBody"></textarea>
+          </label>
+          <label class="field"><span>影响范围</span>
+            <input nbInput fullWidth [(ngModel)]="editScope">
+          </label>
+          <nb-alert status="warning">
+            仅改当前语言 → 该语言名额与角色确认立即失效重算，未触达语言照常保留；勾选影响范围变动 → 全部语言名额失效重算。
+          </nb-alert>
+          <div class="edit-actions">
+            <label class="scope-toggle"><nb-checkbox [(checked)]="scopeChangeAll">影响范围发生变动（全部语言重算）</nb-checkbox></label>
+            <button nbButton status="danger" (click)="saveContent(scopeChangeAll)">保存并推高凭据</button>
+          </div>
+        </nb-card-body>
+      </nb-card>
+    </div>
+
+    <aside class="handoff-side">
+      <!-- 发布门禁 -->
+      <nb-card class="panel">
+        <nb-card-header><div><span class="handoff-kicker">交接发布</span><h3>发布门禁</h3></div></nb-card-header>
+        <nb-card-body>
+          <p class="muted">发布席：市防办发布席 · 陈岚</p>
+          <ul class="blocker-list">
+            <li *ngFor="let b of blockers" class="danger-text">{{ b.message }}</li>
+            <li *ngIf="!blockers.length && !published" class="ok-text">所有必需语言名额有效、双角色确认齐备、无待决项。</li>
+            <li *ngIf="published" class="ok-text">本版本已交接发布。</li>
+          </ul>
+          <button nbButton fullWidth status="success" [disabled]="!!blockers.length || published" (click)="publish()">
+            {{ published ? '已发布' : '执行交接发布' }}
+          </button>
+        </nb-card-body>
+      </nb-card>
+
+      <!-- 断网交接 -->
+      <nb-card class="panel">
+        <nb-card-header><div><span class="handoff-kicker">断网演练</span><h3>交接包导入 / 合并</h3></div></nb-card-header>
+        <nb-card-body class="offline-card">
+          <ol class="offline-steps">
+            <li><button nbButton size="tiny" status="warning" (click)="beginOffline()" [disabled]="offline">① 夜班分叉带走副本</button></li>
+            <li><button nbButton size="tiny" status="basic" (click)="exportLocal()">② 导出当前窗口交接包</button></li>
+            <li><button nbButton size="tiny" status="primary" (click)="simulateRemote()" [disabled]="!offline">③ 模拟断网双方并行抢占并导出夜班包</button></li>
+            <li>
+              <label class="import-btn">
+                <input type="file" accept="application/json" (change)="onPackageSelected($event)">
+                <span nbButton size="tiny" status="danger">④ 导入夜班交接包合并</span>
+              </label>
+            </li>
+          </ol>
+          <p class="muted" *ngIf="mergeSummaryText">{{ mergeSummaryText }}</p>
+          <button *ngIf="offline" nbButton size="tiny" status="basic" (click)="handoff.endOffline()">结束断网演练</button>
+        </nb-card-body>
+      </nb-card>
+
+      <!-- 必需语言覆盖 -->
+      <nb-card class="panel">
+        <nb-card-header><div><span class="handoff-kicker">语言覆盖</span><h3>必需语言名额</h3></div></nb-card-header>
+        <nb-card-body class="coverage-list">
+          <div *ngFor="let locale of requiredLocales">
+            <strong>{{ localeName(locale) }}</strong>
+            <ng-container *ngIf="validLocaleClaims(locale).length; else none">
+              <span *ngFor="let c of validLocaleClaims(locale)" class="chip">
+                {{ channelName(c.channelId) }} · {{ c.operator }}
+              </span>
+            </ng-container>
+            <ng-template #none><span class="danger-text">无有效名额</span></ng-template>
+          </div>
+        </nb-card-body>
+      </nb-card>
+
+      <!-- 审计日志 -->
+      <nb-card class="panel">
+        <nb-card-header><div><span class="handoff-kicker">留痕</span><h3>操作日志</h3></div></nb-card-header>
+        <nb-card-body class="log-list">
+          <article *ngFor="let entry of ledger.log.slice(0, 12)" [class]="entry.level">
+            <time>{{ entry.at | date:'HH:mm:ss' }}</time>
+            <p>{{ entry.text }}</p>
+          </article>
+        </nb-card-body>
+      </nb-card>
+    </aside>
+  </div>
+</section>

@@ -16,8 +16,9 @@ import {
   NbToastrModule,
   NbToastrService
 } from '@nebular/theme';
+import { HandoffComponent } from './handoff/handoff.component';
 
-type WorkspaceView = 'compose' | 'checks' | 'review' | 'versions';
+type WorkspaceView = 'compose' | 'checks' | 'review' | 'versions' | 'handoff';
 type ReviewStatus = 'pending' | 'approved' | 'changes';
 type NoticeStatus = 'draft' | 'in-review' | 'locked';
 type CheckLevel = 'error' | 'warning' | 'info';
@@ -275,7 +276,8 @@ const TEMPLATES: NoticeTemplate[] = [
     NbIconModule,
     NbBadgeModule,
     NbAlertModule,
-    NbToastrModule
+    NbToastrModule,
+    HandoffComponent
   ],
   templateUrl: './app.component.html',
   styleUrl: './app.component.scss'
