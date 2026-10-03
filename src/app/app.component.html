@@ -1,0 +1,295 @@
+<nb-layout windowMode>
+  <nb-layout-header fixed class="app-header">
+    <div class="brand">
+      <div class="brand-mark">急</div>
+      <div>
+        <h1>紧急通知发布台</h1>
+        <p>多语言起草 · 发布前检查 · 版本留痕</p>
+      </div>
+    </div>
+    <div class="header-actions">
+      <span class="save-state"><span class="status-dot" [class.locked]="isLocked"></span>本地自动保存 {{ lastSavedAt }}</span>
+      <button nbButton status="basic" size="small" (click)="undo()" [disabled]="!history.length">撤销 ⌘Z</button>
+      <button nbButton status="basic" size="small" (click)="redo()" [disabled]="!future.length">重做 ⌘Y</button>
+      <button nbButton status="success" size="small" (click)="saveNow()">保存草稿</button>
+    </div>
+  </nb-layout-header>
+
+  <nb-layout-column class="app-shell">
+    <section class="notice-strip">
+      <div>
+        <span class="eyebrow">当前草稿 · {{ draft.version }}</span>
+        <h2>{{ draft.title || '未命名通知' }}</h2>
+      </div>
+      <div class="strip-metrics">
+        <div><strong>{{ draft.languages.length }}</strong><span>语言版本</span></div>
+        <div><strong>{{ draft.channels.length }}</strong><span>发布渠道</span></div>
+        <div><strong class="danger-text">{{ blockingChecks.length }}</strong><span>阻断问题</span></div>
+        <div><strong class="warning-text">{{ warningCount }}</strong><span>待确认提醒</span></div>
+      </div>
+    </section>
+
+    <nav class="workspace-nav" aria-label="工作区">
+      <button [class.active]="activeView === 'compose'" (click)="activeView = 'compose'">
+        <span>01</span><strong>通知编写</strong><small>事件要素与多语言正文</small>
+      </button>
+      <button [class.active]="activeView === 'checks'" (click)="activeView = 'checks'">
+        <span>02</span><strong>发布前检查</strong><small>必填、术语、时间与版本</small>
+      </button>
+      <button [class.active]="activeView === 'review'" (click)="activeView = 'review'">
+        <span>03</span><strong>角色审阅</strong><small>逐句讨论与责任确认</small>
+      </button>
+      <button [class.active]="activeView === 'versions'" (click)="activeView = 'versions'">
+        <span>04</span><strong>锁定与比较</strong><small>冻结、紧急修订、差异</small>
+      </button>
+    </nav>
+
+    <div *ngIf="draft.emergencyRevision" class="emergency-banner">
+      <div class="emergency-sign">修订</div>
+      <div><strong>正在处理紧急修订</strong><p>已从锁定版本派生新草稿，原版本不会被覆盖。完成后需重新进行发布检查。</p></div>
+      <button nbButton status="warning" size="small" (click)="activeView = 'checks'">前往检查</button>
+    </div>
+
+    <main *ngIf="activeView === 'compose'" class="view-grid compose-grid">
+      <div class="main-column">
+        <nb-card class="panel">
+          <nb-card-header>
+            <div><span class="section-kicker">基础信息</span><h3>事件与发布范围</h3></div>
+            <span class="status-pill" [class.locked]="isLocked">{{ isLocked ? '已锁定' : '草稿中' }}</span>
+          </nb-card-header>
+          <nb-card-body>
+            <div class="form-grid">
+              <label class="field span-2"><span>通知标题 *</span><input nbInput fullWidth [disabled]="isLocked" [ngModel]="draft.title" (ngModelChange)="updateMeta('title', $event)"></label>
+              <label class="field"><span>事件类型 *</span>
+                <nb-select fullWidth [disabled]="isLocked" [ngModel]="draft.eventType" (ngModelChange)="updateMeta('eventType', $event)">
+                  <nb-option *ngFor="let type of eventTypes" [value]="type">{{ type }}</nb-option>
+                </nb-select>
+              </label>
+              <label class="field"><span>严重程度 *</span>
+                <nb-select fullWidth [disabled]="isLocked" [ngModel]="draft.severity" (ngModelChange)="updateMeta('severity', $event)">
+                  <nb-option *ngFor="let level of severities" [value]="level">{{ level }}</nb-option>
+                </nb-select>
+              </label>
+              <label class="field span-2"><span>影响范围 *</span><input nbInput fullWidth [disabled]="isLocked" [ngModel]="draft.scope" (ngModelChange)="updateMeta('scope', $event)" placeholder="例如：滨海新区沿海街道"></label>
+              <label class="field"><span>事件时间 *</span><input nbInput fullWidth type="datetime-local" [disabled]="isLocked" [ngModel]="draft.eventAt" (ngModelChange)="updateMeta('eventAt', $event)"></label>
+              <label class="field"><span>生效时间 *</span><input nbInput fullWidth type="datetime-local" [disabled]="isLocked" [ngModel]="draft.effectiveAt" (ngModelChange)="updateMeta('effectiveAt', $event)"></label>
+              <label class="field"><span>失效时间 *</span><input nbInput fullWidth type="datetime-local" [disabled]="isLocked" [ngModel]="draft.expiresAt" (ngModelChange)="updateMeta('expiresAt', $event)"></label>
+            </div>
+            <div class="choice-row">
+              <span class="field-label">目标渠道 *</span>
+              <label class="choice" *ngFor="let channel of channelOptions">
+                <nb-checkbox [disabled]="isLocked" [checked]="draft.channels.includes(channel)" (checkedChange)="toggleChannel(channel, $event)">{{ channel }}</nb-checkbox>
+              </label>
+            </div>
+            <div class="choice-row">
+              <span class="field-label">必需语言 *</span>
+              <label class="choice" *ngFor="let locale of locales">
+                <nb-checkbox [disabled]="isLocked" [checked]="draft.requiredLocales.includes(locale.id)" (checkedChange)="toggleRequiredLocale(locale.id, $event)">{{ locale.name }}</nb-checkbox>
+              </label>
+            </div>
+          </nb-card-body>
+        </nb-card>
+
+        <nb-card class="panel editor-panel">
+          <nb-card-header class="editor-header">
+            <div><span class="section-kicker">多语言正文</span><h3>语言版本编辑</h3></div>
+            <span class="shortcut-hint">⌘S 本地保存</span>
+          </nb-card-header>
+          <div class="language-tabs">
+            <button *ngFor="let language of draft.languages" [class.active]="language.id === selectedLanguageId" (click)="selectedLanguageId = language.id; selectedSentenceIndex = 0">
+              <strong>{{ language.name }}</strong><small>{{ language.reviewed ? '已复核' : '待复核' }}</small>
+            </button>
+          </div>
+          <nb-card-body>
+            <div class="translation-status">
+              <div><span>译者</span><strong>{{ selectedLanguage.translator }}</strong></div>
+              <div><span>语言代码</span><strong>{{ selectedLanguage.locale }}</strong></div>
+              <label><nb-checkbox [disabled]="isLocked" [checked]="selectedLanguage.reviewed" (checkedChange)="setLanguageReviewed($event)">语言复核完成</nb-checkbox></label>
+            </div>
+            <label class="field language-title"><span>翻译标题 *</span><input nbInput fullWidth [disabled]="isLocked" [ngModel]="selectedLanguage.title" (ngModelChange)="updateLanguage('title', $event)"></label>
+            <div class="body-heading"><span>正文 *</span><small>{{ currentSentences.length }} 句 · 点击句子可讨论</small></div>
+            <textarea class="document-editor" [disabled]="isLocked" [ngModel]="selectedLanguage.body" (ngModelChange)="updateLanguage('body', $event)"></textarea>
+            <div class="sentence-strip" *ngIf="currentSentences.length">
+              <button *ngFor="let sentence of currentSentences; let i = index" [class.selected]="i === selectedSentenceIndex" (click)="selectSentence(i)">
+                <span>{{ i + 1 }}</span>{{ sentence }}
+                <b *ngIf="isSentenceDiscussed(i)">讨论</b>
+              </button>
+            </div>
+          </nb-card-body>
+        </nb-card>
+      </div>
+
+      <aside class="side-column">
+        <nb-card class="panel compact">
+          <nb-card-header><div><span class="section-kicker">快速开始</span><h3>模板复用</h3></div></nb-card-header>
+          <nb-card-body>
+            <nb-select fullWidth [(ngModel)]="selectedTemplateId">
+              <nb-option *ngFor="let template of templates" [value]="template.id">{{ template.name }}</nb-option>
+            </nb-select>
+            <p class="muted">{{ selectedTemplateDescription }}</p>
+            <button nbButton fullWidth status="primary" [disabled]="isLocked" (click)="applyTemplate()">应用模板</button>
+          </nb-card-body>
+        </nb-card>
+
+        <nb-card class="panel compact">
+          <nb-card-header><div><span class="section-kicker">发布门禁</span><h3>检查摘要</h3></div><span class="count-pill danger">{{ blockingChecks.length }}</span></nb-card-header>
+          <nb-card-body>
+            <div class="check-overview" (click)="activeView = 'checks'">
+              <div><strong>必填与语言</strong><span>{{ checks.length }} 项结果</span></div>
+              <div><strong>阻断问题</strong><span class="danger-text">{{ blockingChecks.length }} 项</span></div>
+              <div><strong>未解决讨论</strong><span>{{ unresolvedDiscussionCount }} 条</span></div>
+            </div>
+            <button nbButton fullWidth status="basic" (click)="activeView = 'checks'">查看完整检查</button>
+          </nb-card-body>
+        </nb-card>
+
+        <nb-card class="panel compact">
+          <nb-card-header><div><span class="section-kicker">发布流程</span><h3>当前进度</h3></div></nb-card-header>
+          <nb-card-body class="workflow-list">
+            <div class="done"><span>1</span><p><strong>内容起草</strong>自动保存到本机</p></div>
+            <div [class.done]="blockingChecks.length === 0"><span>2</span><p><strong>发布检查</strong>必须清除阻断项</p></div>
+            <div [class.done]="allReviewsApproved"><span>3</span><p><strong>角色确认</strong>编辑、法务、翻译、发布人</p></div>
+            <div [class.done]="isLocked"><span>4</span><p><strong>冻结发布</strong>生成不可变快照</p></div>
+          </nb-card-body>
+        </nb-card>
+      </aside>
+    </main>
+
+    <section *ngIf="activeView === 'checks'" class="view-section">
+      <div class="section-heading">
+        <div><span class="eyebrow">发布门禁</span><h2>逐项检查通知是否可发布</h2><p>错误项会阻止版本锁定；警告项需要人工确认并承担责任。</p></div>
+        <button nbButton status="danger" size="large" (click)="lockVersion()" [disabled]="isLocked">检查通过后锁定最终版本</button>
+      </div>
+      <div class="check-layout">
+        <div class="check-list">
+          <article *ngFor="let check of checks; let i = index" class="check-card" [class.error]="check.level === 'error'" [class.warning]="check.level === 'warning'" [class.info]="check.level === 'info'">
+            <div class="check-index">{{ i + 1 }}</div>
+            <div class="check-copy">
+              <div class="check-meta"><span>{{ check.category }}</span><b>{{ check.level === 'error' ? '必须修复' : check.level === 'warning' ? '建议确认' : '提示' }}</b></div>
+              <h3>{{ check.title }}</h3><p>{{ check.detail }}</p>
+            </div>
+            <button nbButton size="small" status="basic" (click)="showCheck(check)">定位</button>
+          </article>
+          <div *ngIf="!checks.length" class="all-clear"><strong>全部检查已通过</strong><p>可以进入角色确认并锁定最终版本。</p></div>
+        </div>
+        <aside>
+          <nb-card class="panel score-card">
+            <nb-card-body>
+              <span class="section-kicker">检查结果</span>
+              <strong>{{ checks.length === 0 ? 100 : (checks.length - blockingChecks.length) / checks.length * 100 | number:'1.0-0' }}</strong>
+              <p>发布准备度</p>
+              <div class="score-row"><span>阻断</span><b class="danger-text">{{ blockingChecks.length }}</b></div>
+              <div class="score-row"><span>警告</span><b class="warning-text">{{ warningCount }}</b></div>
+              <div class="score-row"><span>总检查</span><b>{{ checks.length }}</b></div>
+            </nb-card-body>
+          </nb-card>
+          <nb-alert status="info" *ngIf="draft.status === 'in-review'">当前稿处于审阅状态。锁定后如需修改，必须发起紧急修订。</nb-alert>
+        </aside>
+      </div>
+    </section>
+
+    <section *ngIf="activeView === 'review'" class="view-section">
+      <div class="section-heading">
+        <div><span class="eyebrow">多人协作</span><h2>分角色审阅与逐句讨论</h2><p>审阅意见绑定具体句子，处理结果随草稿保存在当前浏览器。</p></div>
+        <div class="role-picker"><span>当前身份</span>
+          <nb-select [ngModel]="currentRole" (ngModelChange)="currentRole = $event">
+            <nb-option *ngFor="let role of roles" [value]="role">{{ role }}</nb-option>
+          </nb-select>
+        </div>
+      </div>
+      <div class="review-grid">
+        <div class="main-column">
+          <nb-card class="panel">
+            <nb-card-header><div><span class="section-kicker">逐句讨论</span><h3>{{ selectedLanguage.name }} · 第 {{ selectedSentenceIndex + 1 }} 句</h3></div></nb-card-header>
+            <nb-card-body>
+              <blockquote>{{ currentSentences[selectedSentenceIndex] || '请先在编写页选择句子' }}</blockquote>
+              <div class="discussion-compose">
+                <textarea nbInput fullWidth rows="3" [disabled]="isLocked" [(ngModel)]="discussionText" placeholder="输入修改依据、术语解释或确认意见…"></textarea>
+                <button nbButton status="primary" [disabled]="isLocked || !discussionText.trim()" (click)="addDiscussion()">添加讨论</button>
+              </div>
+              <div class="discussion-list">
+                <article *ngFor="let discussion of activeDiscussions" [class.resolved]="discussion.resolved">
+                  <div class="avatar">{{ discussion.author.slice(0, 1) }}</div>
+                  <div>
+                    <header><strong>{{ discussion.author }}</strong><span>{{ discussion.role }}</span><time>{{ formatDateTime(discussion.createdAt) }}</time></header>
+                    <p><b>第 {{ discussion.sentenceIndex + 1 }} 句</b> {{ discussion.text }}</p>
+                    <button nbButton size="tiny" [status]="discussion.resolved ? 'success' : 'basic'" (click)="toggleDiscussion(discussion.id)">{{ discussion.resolved ? '已解决' : '标记解决' }}</button>
+                  </div>
+                </article>
+                <p *ngIf="!activeDiscussions.length" class="empty-copy">当前语言还没有讨论意见。</p>
+              </div>
+            </nb-card-body>
+          </nb-card>
+        </div>
+        <aside>
+          <nb-card class="panel role-review-card">
+            <nb-card-header><div><span class="section-kicker">责任链</span><h3>角色审阅</h3></div></nb-card-header>
+            <nb-card-body>
+              <article *ngFor="let review of draft.reviews">
+                <header><div><strong>{{ review.role }}</strong><span>{{ review.owner }}</span></div><b [class]="review.status">{{ review.status === 'approved' ? '已确认' : review.status === 'changes' ? '需修改' : '待审阅' }}</b></header>
+                <textarea nbInput fullWidth rows="2" [disabled]="isLocked" [ngModel]="review.note" (ngModelChange)="setReviewNote(review.role, $event)" placeholder="审阅备注"></textarea>
+                <div><button nbButton size="tiny" status="success" [disabled]="isLocked" (click)="setReviewStatus(review.role, 'approved')">确认</button><button nbButton size="tiny" status="warning" [disabled]="isLocked" (click)="setReviewStatus(review.role, 'changes')">退回修改</button></div>
+              </article>
+              <nb-alert status="warning" *ngIf="hasIncompleteReviews">仍有角色未确认，不能视为完成跨角色审阅。</nb-alert>
+            </nb-card-body>
+          </nb-card>
+        </aside>
+      </div>
+    </section>
+
+    <section *ngIf="activeView === 'versions'" class="view-section">
+      <div class="section-heading">
+        <div><span class="eyebrow">版本控制</span><h2>冻结、比较与紧急修订</h2><p>最终锁定版本不可覆盖；紧急修订会从当前版本继续，并保留完整历史。</p></div>
+        <div class="version-actions">
+          <button nbButton status="danger" (click)="lockVersion()" [disabled]="isLocked">锁定当前版本</button>
+          <button nbButton status="warning" (click)="startEmergencyRevision()" [disabled]="!isLocked">发起紧急修订</button>
+        </div>
+      </div>
+      <div class="version-layout">
+        <aside>
+          <nb-card class="panel">
+            <nb-card-header><div><span class="section-kicker">历史</span><h3>版本时间线</h3></div><span class="count-pill">{{ draft.versions.length }}</span></nb-card-header>
+            <nb-card-body class="timeline">
+              <article *ngFor="let version of draft.versions; let last = last" [class.current]="last">
+                <span></span>
+                <div><b>{{ version.version }}</b><strong>{{ version.label }}</strong><p>{{ formatDateTime(version.createdAt) }} · {{ version.channels.length }} 个渠道</p><small *ngIf="version.emergency">紧急修订</small></div>
+              </article>
+            </nb-card-body>
+          </nb-card>
+        </aside>
+        <div class="main-column">
+          <nb-card class="panel">
+            <nb-card-header class="diff-header">
+              <div><span class="section-kicker">文本比较</span><h3>两版正文差异</h3></div>
+              <div class="diff-controls">
+                <nb-select [ngModel]="compareBaseId" (ngModelChange)="compareBaseId = $event"><nb-option *ngFor="let version of draft.versions" [value]="version.id">{{ version.version }} · 基准</nb-option></nb-select>
+                <span>对比</span>
+                <nb-select [ngModel]="compareTargetId" (ngModelChange)="compareTargetId = $event"><nb-option *ngFor="let version of draft.versions" [value]="version.id">{{ version.version }} · 目标</nb-option></nb-select>
+                <nb-select [ngModel]="selectedLanguageId" (ngModelChange)="selectedLanguageId = $event"><nb-option *ngFor="let language of draft.languages" [value]="language.id">{{ language.name }}</nb-option></nb-select>
+              </div>
+            </nb-card-header>
+            <nb-card-body>
+              <div class="diff-legend"><span class="same">未变化</span><span class="changed">措辞变化</span><span class="added">新增</span><span class="removed">删除</span></div>
+              <div class="diff-table">
+                <div class="diff-head"><strong>基准版本</strong><strong>目标版本</strong></div>
+                <div class="diff-row" *ngFor="let row of versionDiff" [class]="row.kind">
+                  <p>{{ row.left || '—' }}</p><p>{{ row.right || '—' }}</p>
+                </div>
+                <p *ngIf="!versionDiff.length" class="empty-copy">选择两个包含该语言正文的版本以查看差异。</p>
+              </div>
+            </nb-card-body>
+          </nb-card>
+          <nb-card class="panel">
+            <nb-card-header><div><span class="section-kicker">发布记录</span><h3>版本摘要</h3></div></nb-card-header>
+            <nb-card-body class="version-summary">
+              <article *ngFor="let version of draft.versions">
+                <div><span>{{ version.version }}</span><h3>{{ version.title }}</h3><p>{{ version.note }}</p></div>
+                <dl><dt>严重程度</dt><dd>{{ version.severity }}</dd><dt>失效</dt><dd>{{ formatDateTime(version.expiresAt) }}</dd></dl>
+              </article>
+            </nb-card-body>
+          </nb-card>
+        </div>
+      </div>
+    </section>
+  </nb-layout-column>
+</nb-layout>
