@@ -42,6 +42,9 @@
       <button [class.active]="activeView === 'versions'" (click)="activeView = 'versions'">
         <span>04</span><strong>锁定与比较</strong><small>冻结、紧急修订、差异</small>
       </button>
+      <button [class.active]="activeView === 'schedule'" (click)="activeView = 'schedule'">
+        <span>05</span><strong>汛期排期交接</strong><small>名额凭据 · 同时抢占 · 断网合并</small>
+      </button>
     </nav>
 
     <div *ngIf="draft.emergencyRevision" class="emergency-banner">
@@ -290,6 +293,9 @@
           </nb-card>
         </div>
       </div>
+    </section>
+    <section *ngIf="activeView === 'schedule'" class="view-section">
+      <app-flood-schedule></app-flood-schedule>
     </section>
   </nb-layout-column>
 </nb-layout>

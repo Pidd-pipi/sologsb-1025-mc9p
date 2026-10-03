@@ -17,7 +17,7 @@
 .strip-metrics div { min-width: 88px; padding: 11px 15px; text-align: center; border-radius: 12px; background: rgba(255,255,255,.09); border: 1px solid rgba(255,255,255,.11); }
 .strip-metrics strong { display: block; font-size: 22px; }
 .strip-metrics span { color: #cce0e2; font-size: 11px; }
-.workspace-nav { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 16px 0; }
+.workspace-nav { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 16px 0; }
 .workspace-nav button { border: 0; border-radius: 13px; padding: 13px 16px; display: grid; grid-template-columns: 34px 1fr; grid-template-rows: auto auto; text-align: left; color: #58717a; background: #fff; cursor: pointer; transition: transform .16s, box-shadow .16s, background .16s; }
 .workspace-nav button:hover { transform: translateY(-2px); box-shadow: 0 9px 24px rgba(31,77,86,.1); }
 .workspace-nav button.active { color: #fff; background: #235b63; box-shadow: 0 10px 25px rgba(35,91,99,.22); }

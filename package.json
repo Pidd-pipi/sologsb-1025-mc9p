@@ -5,7 +5,8 @@
   "scripts": {
     "start": "ng serve --host 0.0.0.0 --port 4200",
     "dev": "ng serve --host 0.0.0.0 --port 4200",
-    "build": "ng build --configuration production"
+    "build": "ng build --configuration production",
+    "test:schedule": "esbuild scripts/schedule-engine.smoke.ts --bundle --platform=node --format=esm --outfile=dist/smoke.mjs && node dist/smoke.mjs"
   },
   "dependencies": {
     "@angular/animations": "19.2.25",

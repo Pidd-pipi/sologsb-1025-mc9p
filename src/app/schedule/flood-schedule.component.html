@@ -1,0 +1,223 @@
+<div class="flood-shell">
+  <header class="flood-header">
+    <div>
+      <span class="flood-kicker">汛期值班 · 有限渠道名额</span>
+      <h2>多语言版本凭据与交接发布</h2>
+      <p>通知 {{ state.notice.id }} · 版本 {{ state.notice.version }} · 影响范围 {{ state.notice.scope }}</p>
+    </div>
+    <div class="flood-header-actions">
+      <button nbButton size="small" status="basic" (click)="resetDemo()">重置演示</button>
+    </div>
+  </header>
+
+  <div class="blocker-banner" [class.has-blocker]="blockers.length">
+    <strong>交接发布门禁：</strong>
+    <ng-container *ngIf="blockers.length; else allClear">
+      {{ blockers.length }} 项未满足，处理前渠道发布按钮不可用：{{ blockers[0] }}
+    </ng-container>
+    <ng-template #allClear>所有必需语言名额凭据有效、角色确认齐全、无待决项，可以交接发布。</ng-template>
+  </div>
+
+  <div class="flood-grid">
+    <!-- 左：版本凭据与编辑 -->
+    <div class="flood-main">
+      <nb-card class="flood-panel">
+        <nb-card-header>
+          <div><span class="flood-kicker">带版本凭据的交接发布</span><h3>语言版本凭据</h3></div>
+          <nb-badge status="warning" text="正文/标题/影响范围变动即换发"></nb-badge>
+        </nb-card-header>
+        <nb-card-body>
+          <div class="locale-tabs">
+            <button *ngFor="let id of localeIds" type="button"
+                    [class.active]="id === activeLocaleId()" (click)="selectLocale(id)">
+              <strong>{{ locale(id).name }}</strong>
+              <small>v{{ locale(id).version }}</small>
+              <i [class.valid]="localeSlotsHealthy(id)"></i>
+            </button>
+          </div>
+
+          <div class="credential-row">
+            <div>
+              <span>当前凭据（FNV 哈希 · 绑定 版本+标题+正文+影响范围）</span>
+              <code>{{ short(activeLocale.credential) }}</code>
+            </div>
+            <button nbButton size="tiny" status="warning" (click)="bumpVersion()">版本递升并换发</button>
+          </div>
+
+          <label class="flood-field"><span>影响范围（变动会使该语言凭据换发）</span>
+            <input nbInput fullWidth [(ngModel)]="draftScope" placeholder="例如：沿江四区低洼地段">
+          </label>
+          <label class="flood-field"><span>标题</span>
+            <input nbInput fullWidth [(ngModel)]="draftTitle">
+          </label>
+          <label class="flood-field"><span>正文</span>
+            <textarea nbInput fullWidth rows="5" [(ngModel)]="draftBody"></textarea>
+          </label>
+          <div class="editor-actions">
+            <button nbButton status="primary" (click)="saveLocaleRevision()">保存并换发凭据 · 立即重算名额与角色确认</button>
+            <small>未编辑的语言版本名额与确认照常保留。</small>
+          </div>
+        </nb-card-body>
+      </nb-card>
+
+      <nb-card class="flood-panel">
+        <nb-card-header>
+          <div><span class="flood-kicker">有限渠道名额 · 按语言排列</span>
+            <h3>{{ activeLocale.name }} 渠道名额（{{ activeLocale.version }}）</h3>
+          </div>
+          <span class="holder-hint">当前操作：{{ activeWindow.name }} · {{ activeWindow.operator }}</span>
+        </nb-card-header>
+        <nb-card-body class="channel-list">
+          <article class="channel-card" *ngFor="let ch of state.channels">
+            <header>
+              <div>
+                <h4>{{ ch.name }}</h4>
+                <small>每语言名额 {{ ch.capacity }} · 授权窗口：
+                  <ng-container *ngFor="let w of ch.authorizedWindows; let last = last">{{ windowName(w) }}<ng-container *ngIf="!last">、</ng-container></ng-container>
+                </small>
+              </div>
+              <nb-badge [status]="slot(ch.id, activeLocale.id)?.holderWindowId ? 'success' : 'basic'"
+                        [text]="slot(ch.id, activeLocale.id)?.holderWindowId ? '已占用' : '空闲'"></nb-badge>
+            </header>
+
+            <dl class="slot-meta">
+              <dt>占用窗口</dt>
+              <dd>{{ slot(ch.id, activeLocale.id)?.holderWindowId ? windowName(slot(ch.id, activeLocale.id)?.holderWindowId!) + ' · ' + slot(ch.id, activeLocale.id)?.holderOperator : '—' }}</dd>
+              <dt>名额凭据</dt>
+              <dd>
+                <ng-container *ngIf="slot(ch.id, activeLocale.id)?.holderWindowId; else noHolder">
+                  <code [class.invalid]="!credentialValid(ch.id, activeLocale.id)">{{ short(slot(ch.id, activeLocale.id)!.credential) }}</code>
+                  <nb-badge status="danger" text="已失效需重抢" *ngIf="!credentialValid(ch.id, activeLocale.id)"></nb-badge>
+                  <nb-badge status="success" text="凭据一致" *ngIf="credentialValid(ch.id, activeLocale.id)"></nb-badge>
+                </ng-container>
+                <ng-template #noHolder>—</ng-template>
+              </dd>
+            </dl>
+
+            <div class="role-row">
+              <ng-container *ngFor="let role of roleKeys">
+                <button nbButton size="tiny"
+                        [status]="isConfirmed(ch.id, activeLocale.id, role) ? 'success' : 'basic'"
+                        [disabled]="!isHolder(ch.id, activeLocale.id, activeWindowId()) || !credentialValid(ch.id, activeLocale.id)"
+                        (click)="confirm(ch.id, role)">
+                  {{ store.roleNames[role] }}：{{ isConfirmed(ch.id, activeLocale.id, role) ? '已确认' : '待确认' }}
+                </button>
+              </ng-container>
+            </div>
+
+            <footer class="channel-actions">
+              <button nbButton size="small" status="primary"
+                      [disabled]="isHolder(ch.id, activeLocale.id, activeWindowId())"
+                      (click)="grab(ch.id)">
+                {{ activeWindow.name }}抢占
+              </button>
+              <button nbButton size="small" status="warning" nbTooltip="两个值班窗口同时抢占，仅一人成功，失败方留待处理稿"
+                      (click)="race(ch.id)">A/B 同时抢占</button>
+              <button nbButton size="small" status="basic"
+                      [disabled]="!isHolder(ch.id, activeLocale.id, activeWindowId())"
+                      (click)="release(ch.id)">释放名额</button>
+              <button nbButton size="small" status="danger"
+                      [disabled]="!slotReady(ch.id, activeLocale.id)"
+                      nbTooltip="凭据有效、值班长与渠道审核确认齐全且无待决项时可发布"
+                      (click)="publish(ch.id)">交接发布</button>
+            </footer>
+          </article>
+        </nb-card-body>
+      </nb-card>
+    </div>
+
+    <!-- 右：值班窗口 / 待处理稿 / 待决项 / 记录 -->
+    <aside class="flood-side">
+      <nb-card class="flood-panel">
+        <nb-card-header><div><span class="flood-kicker">值班窗口</span><h3>两个值班窗口同时抢占</h3></div></nb-card-header>
+        <nb-card-body class="window-list">
+          <article *ngFor="let w of state.windows" [class.active-window]="w.id === activeWindowId()">
+            <div class="window-title">
+              <button nbButton size="tiny" status="basic" (click)="setActiveWindow(w.id)">以此窗口操作</button>
+              <strong>{{ w.name }}</strong>
+            </div>
+            <p>值班员：{{ w.operator }}</p>
+            <div class="window-controls">
+              <nb-toggle [checked]="w.online" (checkedChange)="toggleOnline(w.id, $event)"
+                         status="success" labelPosition="start">
+                {{ w.online ? '在线' : '断网（写入本地交接包）' }}
+              </nb-toggle>
+              <button nbButton size="tiny" status="info"
+                      [disabled]="!windowHasOutbox(w.id)"
+                      (click)="exportPackage(w.id)">导出交接包</button>
+            </div>
+          </article>
+          <label class="import-box">
+            <input type="file" accept="application/json" (change)="onPackageFileSelected($event)">
+            <span>导入对端断网交接包（按通知+版本合并，同渠道两边改 → 待决项）</span>
+          </label>
+          <p class="outbox-count" *ngIf="state.outbox.length">
+            本地待发改动 {{ state.outbox.length }} 条：
+            <ng-container *ngFor="let c of state.outbox">
+              <b>{{ channel(c.channelId).name }}·{{ locale(c.localeId).name }}（{{ windowName(c.windowId) }}）</b>
+            </ng-container>
+          </p>
+        </nb-card-body>
+      </nb-card>
+
+      <nb-card class="flood-panel" *ngIf="pendingDraftsOrConflicts()">
+        <nb-card-header><div><span class="flood-kicker">抢占失败方</span><h3>待处理稿（{{ pendingDraftCount }}）</h3></div></nb-card-header>
+        <nb-card-body class="pending-list">
+          <article *ngFor="let d of state.pendingDrafts" [class.handled]="d.handled" [class.stale]="d.stale">
+            <header>
+              <nb-badge [status]="d.reason === 'race-lost' ? 'warning' : 'danger'" [text]="reasonLabel(d.reason)"></nb-badge>
+              <b *ngIf="d.handled">已处理</b>
+              <b class="stale-tag" *ngIf="d.stale">凭据已过期</b>
+            </header>
+            <p>{{ channel(d.channelId).name }} · {{ locale(d.localeId).name }} · v{{ d.version }}</p>
+            <p class="takeover">失败/被盖方：{{ windowName(d.windowId) }}·{{ d.operator }} →
+              接管人：<strong>{{ windowName(d.takeoverWindowId) }}·{{ d.takeoverOperator }}</strong></p>
+            <p class="draft-time">{{ formatTime(d.createdAt) }}</p>
+            <button nbButton size="tiny" status="success" [disabled]="d.handled" (click)="handleDraft(d.id)">标记已处理</button>
+          </article>
+        </nb-card-body>
+      </nb-card>
+
+      <nb-card class="flood-panel" [class.blocked-panel]="pendingConflictCount">
+        <nb-card-header><div><span class="flood-kicker">断网交接合并</span><h3>待决项（{{ pendingConflictCount }}）</h3></div>
+          <nb-badge *ngIf="pendingConflictCount" status="danger" text="处理前不能发布"></nb-badge>
+        </nb-card-header>
+        <nb-card-body class="conflict-list">
+          <p class="empty" *ngIf="!state.conflicts.length">尚无同一渠道两边都改的待决项。</p>
+          <article *ngFor="let c of state.conflicts" [class.resolved]="c.resolution !== 'pending'">
+            <h4>{{ channel(c.channelId).name }} · {{ locale(c.localeId).name }}</h4>
+            <p>本地：{{ windowName(c.localWindowId) }}<ng-container *ngIf="c.localChange"> · {{ changeType(c.localChange) }}</ng-container>
+              ｜ 交接包：{{ windowName(c.remoteWindowId) }} · {{ changeType(c.remoteChange) }}</p>
+            <p class="conflict-meta" *ngIf="c.resolution === 'pending'">同一渠道两边都改，处理前不能发布。</p>
+            <p class="conflict-meta ok" *ngIf="c.resolution !== 'pending'">已采用{{ c.resolution === 'keep-local' ? '本地' : '交接包' }}排期。</p>
+            <div class="conflict-actions" *ngIf="c.resolution === 'pending'">
+              <button nbButton size="tiny" status="primary" (click)="resolveConflict(c.id, 'keep-local')">采用本地</button>
+              <button nbButton size="tiny" status="info" (click)="resolveConflict(c.id, 'keep-remote')">采用交接包</button>
+            </div>
+          </article>
+        </nb-card-body>
+      </nb-card>
+
+      <nb-card class="flood-panel">
+        <nb-card-header><div><span class="flood-kicker">留痕</span><h3>发布记录与值班日志</h3></div></nb-card-header>
+        <nb-card-body>
+          <div class="publish-list" *ngIf="state.publishes.length">
+            <article *ngFor="let p of state.publishes">
+              <nb-badge status="success" text="已发布"></nb-badge>
+              <div>
+                <strong>{{ channel(p.channelId).name }} · {{ locale(p.localeId).name }} v{{ p.version }}</strong>
+                <small>{{ windowName(p.windowId) }}·{{ p.operator }} · 凭据 {{ short(p.credential) }} · {{ formatTime(p.publishedAt) }}</small>
+              </div>
+            </article>
+          </div>
+          <p class="empty" *ngIf="!state.publishes.length">还没有交接发布记录。</p>
+          <ul class="log-list">
+            <li *ngFor="let log of state.logs.slice(0, 12)" [class]="log.level">
+              <span>{{ formatTime(log.createdAt) }}</span>{{ log.message }}
+            </li>
+          </ul>
+        </nb-card-body>
+      </nb-card>
+    </aside>
+  </div>
+</div>

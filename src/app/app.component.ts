@@ -16,8 +16,9 @@ import {
   NbToastrModule,
   NbToastrService
 } from '@nebular/theme';
+import { FloodScheduleComponent } from './schedule/flood-schedule.component';
 
-type WorkspaceView = 'compose' | 'checks' | 'review' | 'versions';
+type WorkspaceView = 'compose' | 'checks' | 'review' | 'versions' | 'schedule';
 type ReviewStatus = 'pending' | 'approved' | 'changes';
 type NoticeStatus = 'draft' | 'in-review' | 'locked';
 type CheckLevel = 'error' | 'warning' | 'info';
@@ -275,7 +276,8 @@ const TEMPLATES: NoticeTemplate[] = [
     NbIconModule,
     NbBadgeModule,
     NbAlertModule,
-    NbToastrModule
+    NbToastrModule,
+    FloodScheduleComponent
   ],
   templateUrl: './app.component.html',
   styleUrl: './app.component.scss'
